@@ -1,0 +1,58 @@
+services:
+  proxy:
+    image: caddy:2.11.2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      RESQMESH_DOMAIN: ${RESQMESH_DOMAIN:?Set the public domain}
+      ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      private:
+        ipv4_address: 172.30.42.10
+    depends_on: [backend]
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=128m,mode=1777]
+    environment:
+      RESQMESH_ENV: production
+      RESQMESH_PUBLIC_ORIGIN: https://${RESQMESH_DOMAIN:?Set the public domain}
+      RESQMESH_AUTH_DB_PATH: /data/accounts.sqlite3
+      RESQMESH_DB_PATH: /data/resqmesh.sqlite3
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: gemma4:e2b
+    volumes: [reports:/data]
+    networks: [private]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on: [ollama]
+  ollama:
+    image: ollama/ollama:0.35.1
+    restart: unless-stopped
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes: [models:/root/.ollama]
+    networks: [private]
+volumes:
+  reports:
+  models:
+  caddy_data:
+  caddy_config:
+networks:
+  private:
+    ipam:
+      config:
+        - subnet: 172.30.42.0/24

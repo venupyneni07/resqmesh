@@ -1,0 +1,10 @@
+.git
+.venv
+.runtime
+.env
+artifacts
+android
+backend/data
+**/__pycache__
+**/.pytest_cache
+deploy/.env

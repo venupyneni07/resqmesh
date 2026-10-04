@@ -1,0 +1,9 @@
+{
+    email {$ACME_EMAIL}
+}
+{$RESQMESH_DOMAIN} {
+    request_body {
+        max_size 9MB
+    }
+    reverse_proxy backend:8000
+}

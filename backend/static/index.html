@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111c2e">
+  <meta name="description" content="ResQMesh emergency operations. Prioritize SOS reports, inspect verification evidence and record human response decisions.">
+  <title>ResQMesh · Emergency operations</title>
+  <link rel="stylesheet" href="/static/styles.css"><link rel="stylesheet" href="/static/refinements.css"><script src="/static/app.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#workspace-main">Skip to incidents</a>
+<div class="app-shell">
+  <aside class="rail" aria-label="ResQMesh navigation">
+    <a class="brand" href="/" aria-label="ResQMesh home"><span class="brand-mark"><img src="/static/icons/radio-tower.svg" alt=""></span><span>ResQMesh<small>EMERGENCY OPERATIONS</small></span></a>
+    <div class="workspace-switch"><span class="workspace-avatar">RQ</span><div><strong>Response workspace</strong><small>Local command center</small></div></div>
+    <div class="rail-label">WORKSPACE</div>
+    <nav>
+      <button type="button" data-view="overview" class="nav-item active" aria-current="page"><img src="/static/icons/layout-dashboard.svg" alt=""> Overview</button>
+      <button id="nav-verification" class="nav-item" type="button" data-view="verification"><img src="/static/icons/shield-check.svg" alt=""> Verification desk</button>
+      <button type="button" data-view="reports" class="nav-item"><img src="/static/icons/inbox.svg" alt=""> Incoming reports</button>
+      <button id="review-nav" class="nav-item" type="button"><img src="/static/icons/git-merge.svg" alt=""> Correlations <span class="nav-count" id="nav-review-count">0</span></button>
+      <button type="button" data-view="network" class="nav-item"><img src="/static/icons/network.svg" alt=""> Network & agents</button>
+    </nav>
+    <div class="rail-note"><div class="rail-label">TRUST & VERIFICATION</div><img src="/static/icons/shield-check.svg" alt="" class="trust-icon"><strong>Evidence before certainty.</strong><p>Reports stay unverified until a human records a check.</p><div class="runtime-summary"><strong id="rail-origin-count">—</strong><span>claimed source IDs</span></div><small>Device IDs do not establish independent witnesses.</small></div>
+    <div class="rail-footer"><span class="status-dot neutral" id="rail-dot"></span><span id="rail-status">Connecting to backend</span></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div class="breadcrumb">Workspace <span>/</span><strong>Emergency operations</strong></div><div class="topbar-status"><span class="status-dot neutral" id="connection-dot"></span><span id="connection-label">Connecting</span><span class="topbar-divider"></span><time id="clock">—</time><span id="account-status" class="account-status">Connecting</span><button id="notifications-button" class="button button-outline small" type="button">Review alerts</button><button id="account-button" class="button button-outline small" type="button">Sign in</button></div></header>
+    <main id="workspace-main" data-view="overview" tabindex="-1">
+      <div id="connection-error" class="error-banner" role="alert" hidden><div><strong>Backend connection interrupted.</strong><span id="connection-error-text">The displayed data may be out of date.</span></div><button id="retry-button" type="button" class="button button-outline small">Try again</button></div>
+      <section class="page-heading" aria-labelledby="page-title"><div><div class="eyebrow">OPERATIONS / LIVE WORKSPACE</div><h1 id="page-title">Incident operations</h1><p id="page-description">Prioritize the incident. Check the evidence. Coordinate the response.</p></div><div class="heading-meta"><button type="button" class="button button-outline" id="refresh-button"><img src="/static/icons/refresh-cw.svg" alt=""> Refresh</button><span>Updated <strong id="last-sync">—</strong></span></div></section>
+      <div id="overview-provenance" class="simulation-notice"><span id="workspace-provenance" class="tag tag-neutral">AWAITING REPORTS</span><p id="workspace-caveat">Routes and provenance come from incoming reports. Physical radio delivery requires device testing.</p></div>
+      <section id="overview-summary" class="stats-grid" aria-label="Operational summary">
+        <article class="stat"><span class="stat-label">Active incidents <img src="/static/icons/siren.svg" alt=""></span><strong id="stat-active">—</strong><small>Open cases</small></article>
+        <article class="stat stat-critical"><span class="stat-label">Critical urgency <span class="metric-dot red"></span></span><strong id="stat-critical">—</strong><small>AI suggested</small></article>
+        <article class="stat stat-review"><span class="stat-label">Needs verification <img src="/static/icons/shield-check.svg" alt=""></span><strong id="stat-verification">—</strong><small>Check pending</small></article>
+        <article class="stat"><span class="stat-label">Reports received <img src="/static/icons/inbox.svg" alt=""></span><strong id="stat-reports">—</strong><small>Source messages</small></article>
+        <article class="stat"><span class="stat-label">Corroborated <span class="metric-dot green"></span></span><strong id="stat-corroborated">—</strong><small>Human recorded</small></article>
+        <article class="stat"><span class="stat-label">Gateways online <img src="/static/icons/radio-tower.svg" alt=""></span><strong id="stat-gateways">—</strong><small>Recent heartbeat</small></article>
+      </section>
+      <div id="workspace-grid" class="workspace-grid">
+        <section class="operations-section panel" aria-labelledby="incidents-title">
+          <div class="section-heading"><div><h2 id="incidents-title">Incident queue <span class="count-inline" id="incident-count">0</span></h2><p>Urgency and authenticity are separate assessments.</p></div><button type="button" class="button button-outline small" id="review-button">Correlations <span id="review-count" class="button-count">0</span></button></div>
+          <div class="board-toolbar"><div class="filter-group" role="group" aria-label="Filter incidents"><button type="button" data-filter="active" class="filter active" aria-pressed="true">Active</button><button type="button" data-filter="verification" class="filter" aria-pressed="false">Needs verification</button><button type="button" data-filter="all" class="filter" aria-pressed="false">All</button><button type="button" data-filter="resolved" class="filter" aria-pressed="false">Resolved</button></div></div>
+          <div class="queue-tools"><label class="search-field"><img src="/static/icons/search.svg" alt=""><input id="incident-search" name="incident_search" type="search" placeholder="Search ID, location or report…" aria-label="Search incidents or reports" autocomplete="off"><button id="clear-incident-search" class="search-clear" type="button" aria-label="Clear incident search" hidden>×</button></label><label class="sort-field"><span class="sr-only">Sort incidents</span><select id="incident-sort" aria-label="Sort incidents"><option value="priority">Highest urgency</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label></div>
+          <div class="queue-head" aria-hidden="true"><span>URGENCY</span><span>INCIDENT / LOCATION</span><span>VERIFICATION</span><span>RESPONSE</span><span>RECEIVED</span><span></span></div>
+          <div id="incidents-list" class="incident-list" aria-busy="true"><div class="empty-state"><h3>Connecting to the incident queue</h3><p>Loading reports and recorded decisions from the backend.</p></div></div>
+          <div id="incident-pagination" class="pagination-bar" aria-label="Incident pages"></div>
+        </section>
+        <aside class="insights-column" aria-label="Operational insights">
+          <section class="insight-panel verification-panel" aria-labelledby="verification-desk-title"><div class="insight-heading"><span class="panel-icon"><img src="/static/icons/shield-check.svg" alt=""></span><h2 id="verification-desk-title">Verification desk</h2></div><p class="panel-description">Checks awaiting human review.</p><div id="verification-desk"><p class="detail-muted">Waiting for case evidence.</p></div></section>
+          <section class="insight-panel" aria-labelledby="arrival-title"><div class="insight-heading"><h2 id="arrival-title">Incoming reports</h2><span class="subtle-pill">Last 60 min</span></div><div id="arrival-chart"><p class="detail-muted">Waiting for received timestamps.</p></div></section>
+          <section class="insight-panel" aria-labelledby="activity-title"><div class="insight-heading"><h2 id="activity-title">Recent activity</h2><span class="status-dot"></span></div><div id="activity-feed"><p class="detail-muted">No activity loaded.</p></div></section>
+        </aside>
+      </div>
+      <section id="system-section" class="system-section" aria-label="Network and AI status" hidden>
+        <section class="gateway-strip panel" aria-labelledby="gateway-title"><div class="section-heading"><div><h2 id="gateway-title">Gateway health</h2><p>Availability from unexpired heartbeat leases.</p></div><img class="section-icon" src="/static/icons/network.svg" alt=""></div><div id="gateway-list" class="gateway-list"><span class="detail-muted">Awaiting heartbeat state</span></div><p class="system-note">An online gateway does not guarantee a return path to the sender.</p></section>
+        <section class="intelligence-strip panel" aria-labelledby="intelligence-title"><div class="intelligence-heading"><div><h2 id="intelligence-title">AI processing</h2><p id="model-label">Checking local model…</p></div><span id="model-state" class="tag tag-neutral">CONNECTING</span></div><div class="agent-grid" id="agent-grid"></div><p class="ai-footnote" id="ai-footnote">Four advisory stages. Human decisions remain in control.</p></section>
+      </section>
+      <section id="reports-section" class="reports-section panel" aria-labelledby="reports-title" hidden><div class="section-heading"><div><div class="eyebrow">SOURCE EVIDENCE</div><h2 id="reports-title">Original reports <span class="count-inline" id="report-count">0</span></h2><p>Unedited messages, declared locations and recorded relay routes.</p></div><span class="section-caption">RETAINED AS RECEIVED</span></div><div class="reports-toolbar"><label class="search-field"><img src="/static/icons/search.svg" alt=""><input id="report-search" type="search" aria-label="Search source reports" placeholder="Search report ID, device, location or message…" autocomplete="off"><button id="clear-report-search" class="search-clear" type="button" aria-label="Clear report search" hidden>×</button></label><span class="reports-toolbar-hint">Original messages · latest received first</span></div><div id="reports-list" class="reports-grid" aria-busy="true"><div class="empty-state"><h3>Waiting for incoming reports</h3><p>Reports appear after a gateway uploads a saved SOS.</p></div></div><div id="report-pagination" class="pagination-bar" aria-label="Report pages"></div></section>
+      <footer class="page-footer"><span>ResQMesh <span>Emergency communications, connected.</span></span><span>Human decisions. Traceable evidence.</span></footer>
+    </main>
+  </div>
+</div>
+<dialog id="incident-dialog" class="detail-dialog" aria-labelledby="detail-title"><div class="dialog-heading"><div><span class="eyebrow">INCIDENT WORKSPACE</span><h2 id="detail-title">Incident detail</h2></div><button type="button" class="icon-button" data-close="incident-dialog" aria-label="Close incident detail">×</button></div><div id="detail-content" class="dialog-body"></div></dialog>
+<dialog id="correlation-dialog" class="detail-dialog correlation-dialog" aria-labelledby="correlation-title"><div class="dialog-heading"><div><span class="eyebrow">HUMAN DECISION</span><h2 id="correlation-title">Correlation review</h2></div><button type="button" class="icon-button" data-close="correlation-dialog" aria-label="Close correlation review">×</button></div><div id="correlation-content" class="dialog-body"></div></dialog>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div><div id="announcer" class="sr-only" role="status" aria-live="polite"></div>
+</body>
+</html>

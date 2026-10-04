@@ -1,0 +1,13 @@
+{
+  "name": "resqmesh-dashboard-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Optional browser and dependency-free DOM checks for the ResQMesh local dashboard",
+  "scripts": {
+    "test": "node backend/tests/dashboard_interactions.cjs && node backend/tests/dashboard_media.cjs",
+    "test:browser": "node backend/tests/browser_local_completion.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

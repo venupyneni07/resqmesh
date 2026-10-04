@@ -1,0 +1,78 @@
+{
+  "kind": "actual_local_model_validation",
+  "model": "gemma4:e2b",
+  "provider": "Ollama at 127.0.0.1:11434",
+  "simulation_reports": true,
+  "note": "Actual generated results, recorded from a direct agent probe. These are synthetic test reports, not seeded runtime data. Intake omitted missing details; triage identified them. No transport or physical radio behavior was tested here.",
+  "reports": [
+    {
+      "id": "c92770f2-2ae6-4034-bbb2-ef696f43cd77",
+      "text": "Ground floor lo water fast ga vastundi. Three people trapped. One elderly person.",
+      "building": "ResQMesh synthetic test apartment",
+      "zone": "Ground floor",
+      "intake_seconds": 4.95,
+      "intake": {
+        "facts": [
+          {"field":"emergency_type","value":"flooding","quote":"lo water fast ga vastundi","source":"text","report_id":"c92770f2-2ae6-4034-bbb2-ef696f43cd77"},
+          {"field":"people_affected","value":"3","quote":"Three people trapped","source":"text","report_id":"c92770f2-2ae6-4034-bbb2-ef696f43cd77"},
+          {"field":"vulnerable_person","value":"elderly person","quote":"One elderly person.","source":"text","report_id":"c92770f2-2ae6-4034-bbb2-ef696f43cd77"}
+        ],
+        "uncertain_interpretations": [],
+        "missing_information": [],
+        "model": "gemma4:e2b",
+        "generated_at": 1791051217098
+      },
+      "triage_seconds": 9.55,
+      "triage": {
+        "summary": "Ground floor of the ResQMesh synthetic test apartment is experiencing fast-moving water, trapping three people, including one elderly person.",
+        "suggested_urgency": "critical",
+        "urgency_reason": "Report of trapped individuals in a flooding situation.",
+        "response_category": "Rescue",
+        "questions": ["What is the exact location of the flooding?", "Are the trapped individuals conscious?", "Is the water level rising?", "Are there any other hazards in the area?"],
+        "acknowledgement_draft": "Received report regarding flooding and trapped individuals for human review. No promise of rescue or response time.",
+        "missing_information": ["Exact location details", "Current water level", "Status of trapped individuals"],
+        "evidence": [{"report_id":"c92770f2-2ae6-4034-bbb2-ef696f43cd77","quote":"lo water fast ga vastundi"}],
+        "model": "gemma4:e2b",
+        "generated_at": 1791051229940
+      }
+    },
+    {
+      "id": "b09ebf51-31f1-48a1-8afc-5f0264798e11",
+      "text": "Basement water level increasing. Elderly person needs help.",
+      "building": "ResQMesh synthetic test apartment",
+      "zone": "Basement",
+      "intake_seconds": 3.29,
+      "intake": {
+        "facts": [
+          {"field":"emergency_type","value":"water level increasing","quote":"Basement water level increasing.","source":"text","report_id":"b09ebf51-31f1-48a1-8afc-5f0264798e11"},
+          {"field":"location","value":"Basement","quote":"Basement","source":"zone","report_id":"b09ebf51-31f1-48a1-8afc-5f0264798e11"},
+          {"field":"vulnerable_person","value":"Elderly person","quote":"Elderly person needs help.","source":"text","report_id":"b09ebf51-31f1-48a1-8afc-5f0264798e11"}
+        ],
+        "uncertain_interpretations": [],
+        "missing_information": [],
+        "model": "gemma4:e2b",
+        "generated_at": 1791051220392
+      },
+      "triage_seconds": 9.76,
+      "triage": {
+        "summary": "Water level is increasing in the basement, and an elderly person requires assistance.",
+        "suggested_urgency": "medium",
+        "urgency_reason": "Water level increase poses a potential hazard, and an elderly person needs assistance.",
+        "response_category": "Water/Hazardous Material",
+        "questions": ["What is the current water level?", "Is the elderly person currently in danger?", "Is the water source known?", "Are there any immediate risks to the structure?"],
+        "acknowledgement_draft": "Received report regarding increasing basement water level and an elderly person needing help for human review.",
+        "missing_information": ["Current water level", "Location details beyond 'Basement'", "Specific condition of the elderly person", "Water source details"],
+        "evidence": [{"report_id":"b09ebf51-31f1-48a1-8afc-5f0264798e11","quote":"Basement water level increasing."},{"report_id":"b09ebf51-31f1-48a1-8afc-5f0264798e11","quote":"Elderly person needs help."}],
+        "model": "gemma4:e2b",
+        "generated_at": 1791051239704
+      }
+    }
+  ],
+  "correlation_seconds": 8.59,
+  "correlation": [{
+    "candidate_incident_id": "e9fc7d5f-0e0e-4e02-969d-a16a6dafa10b",
+    "confidence": 0.8,
+    "reason": "Both reports mention water issues and an elderly person in the same building, with one mentioning basement water level and the other mentioning ground floor flooding.",
+    "evidence": [{"report_id":"b09ebf51-31f1-48a1-8afc-5f0264798e11","quote":"Basement water level increasing."},{"report_id":"c92770f2-2ae6-4034-bbb2-ef696f43cd77","quote":"Ground floor lo water fast ga vastundi."}]
+  }]
+}
