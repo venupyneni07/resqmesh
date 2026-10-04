@@ -5,8 +5,10 @@ from pathlib import Path
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
 from backend.ai import InferenceUnavailable, InvalidAIOutput, OllamaAgents
+from backend.app import create_app
 from backend.media_analysis import MediaAnalyzer, prepare_media
 from backend.store import Store, StoreError
 from backend.tests.test_backend import TestOnlyAgents
@@ -70,6 +72,58 @@ def test_recovery_enqueues_published_file_but_not_missing_attachment(tmp_path):
     assert statuses == ["queued", "waiting_upload"]
     with pytest.raises(StoreError, match="finish uploading"):
         store.retry_media_analysis(report["id"], items[1]["id"])
+
+
+def test_blank_media_result_is_visible_in_admin_api_without_speech_or_emergency(monkeypatch, tmp_path):
+    """Synthetic inference: an empty transcript must not hide the completed review."""
+    monkeypatch.setattr("backend.media_analysis.prepare_media", lambda *args: {
+        "content": [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,c3ludGhldGlj"}}],
+        "kind": "image", "duration_seconds": 0, "sampled_frame_seconds": [0], "audio_included": False})
+    review = interpretation(summary="The image appears uniformly white.",
+        visual_observations=["No distinct objects can be identified."],
+        uncertainties=["This image alone cannot establish what happened."],
+        urgency_reason="The attachment supplies no reliable urgency evidence.")
+    def handler(request):
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"capabilities": ["vision"]})
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {
+            "content": json.dumps(review)}}]})
+    with TestClient(create_app(db_path=str(tmp_path / "blank-media.db"), agents=TestOnlyAgents(),
+                               start_worker=False, api_token="", production=False)) as client:
+        attachment = manifest()
+        packet = media_packet(attachment)
+        assert client.post("/api/reports", json=packet).status_code == 202
+        report, = client.get("/api/state").json()["reports"]
+        assert report["media_analysis"][0]["status"] == "waiting_upload"
+        store = client.app.state.store
+        with store.connection() as db:
+            original = tuple(db.execute("SELECT packet_json,fingerprint FROM reports").fetchone())
+        uploaded = client.put(f"/api/reports/{packet['id']}/attachments/{attachment['id']}",
+            content=JPEG, headers={"Content-Type": "image/jpeg"})
+        assert uploaded.status_code == 200
+        report, = client.get("/api/state").json()["reports"]
+        assert report["media_analysis"][0]["status"] == "queued"
+        async def process():
+            agents = OllamaAgents("http://test.local", "TEST-ONLY")
+            await agents.client.aclose()
+            agents.client = httpx.AsyncClient(base_url="http://test.local", transport=httpx.MockTransport(handler))
+            try:
+                await Worker(store, agents).process_media(store.claim_media_job())
+            finally:
+                await agents.close()
+        asyncio.run(process())
+        report, = client.get("/api/state").json()["reports"]
+        item, = report["media_analysis"]
+        assert item["status"] == "complete" and item["error"] is None
+        assert item["result"]["summary"] == review["summary"]
+        assert item["result"]["uncertainties"] == review["uncertainties"]
+        assert item["result"]["transcript"] == ""
+        assert item["result"]["suggested_urgency"] == "unknown"
+        assert item["result"]["dispatch_performed"] is False
+        assert [r["type"] for r in report["receipts"]] == ["backend_received"]
+        with store.connection() as db:
+            assert tuple(db.execute("SELECT packet_json,fingerprint FROM reports").fetchone()) == original
+        assert store.media_path(packet["id"], attachment["id"]).read_bytes() == JPEG
 
 
 def test_failure_retry_is_bounded_manual_retry_preserves_original(tmp_path):

@@ -49,9 +49,19 @@ The harness uses the committed generated audio/image/video files in `backend/tes
 
 The checks distinguish accepted reports, attachment integrity, job completion and interpretation accuracy. A completed model result can still be wrong. The [media review notes](MEDIA_AI.md) describe observed errors and bounded video coverage.
 
+For a focused blank-image and speech check, wait until the local backend has no pending model jobs, then run:
+
+```sh
+.venv/bin/python -m backend.tests.run_live_blank_media_validation
+```
+
+This runner generates a plain-white JPEG and uses the committed synthetic voice fixture. It starts its own loopback HTTP server on an available port with a new isolated database, then exercises upload, the real media worker, local Gemma and results returned by `/api/state`. It verifies completion events, byte-identical downloads, unchanged original packets and backend-received receipts without automatic human acknowledgement. The four text-agent jobs are intentionally excluded from this focused check. The temporary server stops when the check finishes; existing report and attachment hashes are compared without removing legitimate new reports. Results are written to ignored local artifacts; the live responder database is unchanged.
+
+The recorded run returned a no-discernible-content summary and unknown urgency for the white image; the synthetic speech transcript matched its known words ignoring capitalization. This demonstrates processing and visible results for those fixtures, not universal accuracy. A separate synthetic API regression checks that a completed result remains available with an empty transcript and unknown urgency. Dashboard checks cover summaries and processing states in incoming rows, case Overview and the original-media viewer, expanded review details and the explanation for unclear speech.
+
 ## Recorded software verification
 
-On October 4, 2026, the latest full backend suite passed **140 tests**, with one upstream Starlette deprecation warning. This includes regressions for rejecting truncated or incomplete media output and checking model capabilities before inference.
+On October 4, 2026, the latest full backend suite passed **141 tests**, with one upstream Starlette deprecation warning. This includes regressions for rejecting truncated or incomplete media output, checking model capabilities before inference and retaining visible blank-media results through the dashboard API.
 
 The separate Android baseline passed **50 Kotlin JVM tests and 12 distinct emulator tests**. Android lint reported zero errors and 33 warnings. Original local report payloads, media and settings were checked for preservation. These are dated checks, not a claim that future commits or every device have passed.
 

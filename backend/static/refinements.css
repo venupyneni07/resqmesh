@@ -320,13 +320,43 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .media-player img, .media-player video { display: block; max-width: 100%; max-height: 60dvh; margin: 0 auto; object-fit: contain; border-radius: 6px; }
 .media-player audio { width: 100%; }
 @media (max-width: 480px) { .media-evidence-row { align-items: flex-start; flex-direction: column; gap: 8px; } .media-dialog { padding: 16px; } }
-/* Media findings stay collapsed until a responder chooses to review them. */
+/* Primary media outcomes stay visible; detailed observations remain optional. */
 .media-analysis {margin: 0 0 16px; padding: 12px 14px; border: 1px solid #bdced3; border-radius: 10px; background: #f5faf9; overflow-wrap: anywhere;}
 .media-analysis > summary {font-weight: 700; cursor: pointer; min-height: 32px; display: list-item;}
 .media-analysis p, .media-analysis li {font-size: 14px; line-height: 1.5;}
 .media-analysis h5 {margin: 16px 0 6px; font-size: 14px;}
 .media-transcript {margin: 8px 0; padding: 12px; border-left: 3px solid #0b706b; white-space: pre-wrap; background: white;}
 .media-provenance pre {white-space: pre-wrap; font-size: 12px;}
+.media-analysis {scroll-margin-top: 66px;}
+.media-analysis:focus-visible {outline: 2px solid #0b706b; outline-offset: 3px;}
+.media-analysis .media-result-summary {font-weight: 600; color: #163c43;}
+.media-transcript-empty {font-size: 12px; line-height: 1.6; padding: 9px 11px; border-left: 3px solid #b78333; background: #fff8e9; color: #685024;}
+.media-observations, .media-provenance {margin-top: 12px; font-size: 12px;}
+.media-observations > summary, .media-provenance > summary {min-height: 32px; cursor: pointer; line-height: 1.5; color: #335a62;}
+.media-overview-card {padding: 13px 15px; margin-top: 10px; border: 1px solid #d5e1e2; border-left: 3px solid #397b7a; border-radius: 7px; background: #f6faf9; overflow-wrap: anywhere;}
+.media-overview-top {display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px;}
+.media-overview-card p {font-size: 12px; line-height: 1.6; margin: 9px 0;}
+.media-overview-card .media-result-summary {font-size: 13px; color: #173d43; font-weight: 600;}
+.media-overview-card > small {display: block; font-size: 10px; line-height: 1.5;}
+.media-overview-card > .button {margin-top: 11px;}
+.media-overview-uncertainty {color: #5b6370;}
+.media-overview-transcript {padding: 8px 10px; border-left: 2px solid #7aaba4; background: #fff; white-space: pre-wrap; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;}
+.media-state-failed, .media-state-unavailable {border-left-color: #b66e41; background: #fff9f2;}
+.report-list-preview .report-media-preview {color: #28545a;}
+.media-action-message {font-size: 12px; color: #795020;}
+.media-dialog {width: min(1000px, calc(100vw - 32px));}
+.media-viewer-layout {display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .86fr); gap: 22px; align-items: start;}
+.media-viewer-review {min-width: 0;}
+.media-viewer-review > h3 {font-size: 14px; margin: 0 0 8px;}
+.media-viewer-review .media-overview-card {margin-top: 0;}
+.media-viewer-layout .media-player {position: sticky; top: 0; min-width: 0;}
+.media-viewer-layout .media-player img, .media-viewer-layout .media-player video {max-height: 50dvh;}
+@media (max-width: 700px) {
+  .media-viewer-layout {grid-template-columns: 1fr; gap: 18px;}
+  .media-viewer-layout .media-player {position: static;}
+  .media-viewer-layout .media-player img, .media-viewer-layout .media-player video {max-height: 35dvh;}
+  .media-overview-card {padding: 11px 12px;}
+}
 .account-status {font-size: 12px; color: #53627a;}
 @media (max-width: 1100px) {.account-status {display: none;} .topbar-status {flex-wrap: wrap; gap: 8px;}}
 @media (max-width: 760px) {

@@ -23,7 +23,7 @@ const context = {document, URL, AbortController, Date, JSON, Set, Map, console,
   fetch: async (url, options) => { requests.push({url, options}); return nextResponse; }};
 let source = fs.readFileSync(path.resolve(__dirname, '../static/app.js'), 'utf8');
 source = source.slice(0, source.lastIndexOf('  document.querySelectorAll("[data-filter]").forEach((filter)'));
-source += 'globalThis.test={openMedia,closeMedia,mediaEvidence,reportListRow,setKey(value){key=value},setState(value){state={...initialState,...value}}};})();';
+source += 'globalThis.test={openMedia,closeMedia,mediaEvidence,mediaAnalysis,incidentMediaOverview,reportListRow,urgency,setAccount(value){account=value},setKey(value){key=value},setState(value){state={...initialState,...value}}};})();';
 vm.runInNewContext(source, context);
 const t = context.test;
 const report = {id: 'df30abac-c7e1-469d-ae3d-bb596bd948a6', incident_id: 'case-1', origin_id: 'TEST-SOURCE', message_source: 'preset', text: 'Help needed; details unavailable.', simulation: true, emergency_type: 'other', receipts: [{type: 'backend_received'}]};
@@ -41,12 +41,55 @@ const item = {id: '0a2d516d-131e-443a-bd2d-90813a57ed31', kind: 'image', mime_ty
   assert.match(queue.textContent, /Photo pending/);
   assert.equal(queue.descendants('img').length, 0);
 
+  const result = {summary: 'Synthetic ordinary blue image; no emergency is visible.', transcript: '', language: 'unknown', suggested_urgency: 'normal', urgency_reason: 'No emergency signs are apparent in the supplied image.', uncertainties: ['A still image cannot establish the surrounding situation.'], visual_observations: ['Plain blue field'], audible_observations: [], requested_human_checks: ['Review the original.'], model: 'TEST-ONLY-MODEL', generated_at: Date.now(), coverage: {}, source_sha256: 'test-only-sha'};
+  const availableImage = {...item, status: 'available'};
+  for (const [status, expected] of [['waiting_upload', 'Waiting for upload'], ['queued', 'Queued'], ['running', 'Processing'], ['failed', 'Failed'], ['unavailable', 'Unavailable']]) {
+    const reportWithState = {...report, media: [status === 'waiting_upload' ? item : availableImage], media_analysis: [{attachment_id: item.id, status, error: status === 'failed' ? 'Synthetic inference failure' : null}]};
+    const overview = t.incidentMediaOverview([reportWithState]);
+    assert.match(overview.textContent, new RegExp(expected));
+    assert.equal(overview.hidden, false);
+    assert.equal(overview.descendants('article').length, 1);
+    assert.match(t.reportListRow(reportWithState).textContent, new RegExp(expected));
+  }
+  const completed = {...report, media: [availableImage], media_analysis: [{attachment_id: item.id, status: 'complete', result}]};
+  const completedReview = t.mediaAnalysis(completed, availableImage, completed.media_analysis[0]);
+  assert.equal(completedReview.open, true);
+  assert.match(completedReview.textContent, /Synthetic ordinary blue image/);
+  assert.match(completedReview.textContent, /Suggested urgency: normal/);
+  assert.match(completedReview.textContent, /A still image cannot establish/);
+  assert.match(t.reportListRow(completed).textContent, /AI media: Photo · Complete: Synthetic ordinary blue image/);
+  assert.match(t.reportListRow(completed).textContent, /Review media/);
+  t.setState({reports: [completed]});
+  assert.equal(t.urgency({report_ids: [report.id]}), 'normal', 'normal media urgency is not relabeled as medium');
+  assert.doesNotMatch(completedReview.textContent, /No intelligible speech/, 'photos do not receive a fabricated speech outcome');
+  const audio = {...availableImage, kind: 'audio', mime_type: 'audio/mp4'};
+  const voiceResult = {...result, summary: 'Synthetic unintelligible recording.', suggested_urgency: 'unknown', uncertainties: ['Speech could not be understood.'], visual_observations: []};
+  const voiceReview = t.mediaAnalysis(report, audio, {status: 'complete', result: voiceResult});
+  assert.match(voiceReview.textContent, /No intelligible speech was identified by the model/);
+  assert.match(voiceReview.textContent, /does not establish that it contains no speech/);
+  const missingResult = t.mediaAnalysis(report, availableImage, {status: 'complete', result: null});
+  assert.match(missingResult.textContent, /Result unavailable/);
+  assert.match(missingResult.textContent, /No analysis summary was returned/);
+  assert.doesNotMatch(missingResult.textContent, /Local AI is processing/);
+  t.setAccount({role: 'viewer'});
+  assert.equal(t.mediaAnalysis(report, availableImage, {status: 'failed'}).descendants('button').length, 0);
+  t.setAccount({role: 'responder'});
+  const failed = t.mediaAnalysis(report, availableImage, {status: 'failed', error: 'Synthetic test error'});
+  const retry = failed.descendants('button')[0];
+  nextResponse = {ok: false, status: 403, json: async () => ({detail: 'Synthetic role denial'})};
+  await retry.handlers.click[0]();
+  assert.equal(requests.at(-1).url, `/api/reports/${report.id}/attachments/${item.id}/analyze`);
+  assert.equal(requests.at(-1).options.method, 'POST');
+  assert.match(failed.textContent, /Synthetic role denial/);
+  assert.equal(retry.disabled, false);
+  console.log('PASS: media waiting/queued/running/failed/complete states appear in Overview and bounded report rows; normal/unknown results, empty speech, uncertainty and missing-output fallback are explicit; failed retry uses the real endpoint and respects viewer permissions.');
+
   t.setKey('test-only-memory-key');
   for (const [kind, mime, tag] of [['image', 'image/jpeg', 'img'], ['audio', 'audio/mp4', 'audio'], ['video', 'video/mp4', 'video']]) {
     const available = {...item, kind, mime_type: mime, status: 'available'};
     nextResponse = {ok: true, blob: async () => ({size: 12, type: mime})};
     const media = t.mediaEvidence({...report, media: [available]});
-    assert.equal(media.descendants('button').length, 1);
+    assert.equal(media.descendants('button').length, 2); // Original review plus retry for missing backend job state.
     assert.match(media.textContent, /Available for review/);
     const before = requests.length;
     assert.equal(requests.length, before); // Rendering never fetches or autoplays.
@@ -60,7 +103,8 @@ const item = {id: '0a2d516d-131e-443a-bd2d-90813a57ed31', kind: 'image', mime_ty
     assert.ok(dialog.open && player);
     assert.equal(activeUrls.size, 1);
     assert.equal(player.autoplay, undefined);
-    assert.match(dialog.textContent, /Source-submitted media · unverified · review AI interpretation separately/);
+    assert.match(dialog.textContent, /Source-submitted media · unverified · AI interpretation is shown separately in this viewer/);
+    assert.match(dialog.textContent, /AI interpretation · unverified/);
     if (kind !== 'image') {
       assert.equal(player.controls, true);
       assert.equal(player.preload, 'metadata');

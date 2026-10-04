@@ -45,7 +45,7 @@
   let stateReceivedAt = Date.now();
 
   const statusLabels = {new: "New", acknowledged: "Acknowledged", in_progress: "In progress", resolved: "Resolved"};
-  const urgencyLabels = {critical: "Critical", high: "High", medium: "Medium", low: "Low", unknown: "Unassessed"};
+  const urgencyLabels = {critical: "Critical", high: "High", medium: "Medium", normal: "Normal", low: "Low", unknown: "Unassessed"};
   const sourceTypeLabels = {medical: "Medical emergency", fire: "Fire / smoke", flood: "Flooding", accident: "Accident", trapped: "People trapped", safety_threat: "Safety threat", other: "Other emergency"};
   const quickNeedLabels = {cannot_move: "Cannot move", cannot_speak: "Cannot speak", people_injured: "People injured"};
   const mediaLabels = {audio: "Voice message", image: "Photo", video: "Video"};
@@ -144,7 +144,7 @@
     const rank = {critical: 0, high: 1, medium: 2, normal: 2, low: 3, unknown: 4};
     const suggestions = [incident.triage?.suggested_urgency || "unknown", ...mediaFindings(incident).map((entry) => entry.result.suggested_urgency)];
     const chosen = suggestions.sort((a, b) => (rank[a] ?? 4) - (rank[b] ?? 4))[0];
-    return chosen === "normal" ? "medium" : chosen;
+    return chosen;
   }
   function urgencyTag(incident) {
     const level = urgency(incident);
@@ -367,11 +367,12 @@
       const identity = `${analysis.attachment_id}:${analysis.result.generated_at}`;
       if (seenMediaResults.has(identity)) continue;
       seenMediaResults.add(identity);
-      if (!mediaBaselineLoaded || !["high", "critical"].includes(analysis.result.suggested_urgency)) continue;
-      const message = `AI suggests ${analysis.result.suggested_urgency} urgency for SOS ${shortId(report.id)}. Review the recording and uncertainty.`;
+      if (!mediaBaselineLoaded) continue;
+      const urgent = ["high", "critical"].includes(analysis.result.suggested_urgency);
+      const message = urgent ? `AI suggests ${analysis.result.suggested_urgency} urgency for SOS ${shortId(report.id)}. Review the recording and uncertainty.` : `Media analysis complete for SOS ${shortId(report.id)}. Open the report to review the result and uncertainty.`;
       toast(message);
       $("announcer").textContent = message;
-      if ("Notification" in window && Notification.permission === "granted") {
+      if (urgent && "Notification" in window && Notification.permission === "granted") {
         // Keep sensitive incident details off the system/lock-screen notification.
         try {
           const notice = new Notification("ResQMesh · review requested", {body: "New media analysis needs human review. Open the response workspace.", tag: identity});
@@ -462,7 +463,7 @@
     const created = (Number(a.created_at) || 0) - (Number(b.created_at) || 0);
     if (sort === "newest") return -created || String(a.id).localeCompare(String(b.id));
     if (sort === "oldest") return created || String(a.id).localeCompare(String(b.id));
-    const rank = {critical: 0, high: 1, medium: 2, low: 3, unknown: 4};
+    const rank = {critical: 0, high: 1, medium: 2, normal: 2, low: 3, unknown: 4};
     return (rank[urgency(a)] ?? 4) - (rank[urgency(b)] ?? 4) || -created || String(a.id).localeCompare(String(b.id));
   }
 
@@ -856,8 +857,10 @@
     const sourceCategory = report.emergency_type === "other" ? "Other / unspecified emergency" : report.emergency_type ? sourceTypeLabels[report.emergency_type] || humanField(report.emergency_type) : "Emergency type not supplied";
     const selectedDetails = [array(report.quick_needs).map((need) => quickNeedLabels[need] || humanField(need)).join(" · "), Number.isInteger(report.people_affected) ? `${report.people_affected} ${report.people_affected === 1 ? "person" : "people"} affected` : ""].filter(Boolean);
     const previewText = [...selectedDetails, report.message_source === "preset" ? "No typed message" : report.text || "No description supplied"].join(" — ");
-    const previewBody = node("p", "", previewText);
-    previewBody.title = previewText;
+    const mediaReviews = mediaEntries(report);
+    const reviewPreview = mediaReviews.map(({item, analysis}) => `${mediaLabels[item.kind] || "Attachment"} · ${mediaStateLabel(analysis)}: ${mediaAnalysisSummary(analysis)}`).join(" · ");
+    const previewBody = node("p", mediaReviews.length ? "report-media-preview" : "", mediaReviews.length ? `AI media: ${reviewPreview}` : previewText);
+    previewBody.title = mediaReviews.length ? `${reviewPreview}\nSource: ${previewText}` : previewText;
     const category = node("small", "", sourceCategory);
     const mediaBrief = mediaSummary(report);
     if (mediaBrief) {
@@ -870,7 +873,7 @@
     delivery.append(node("strong", "", receipts.some((receipt) => receipt.type === "responder_acknowledged") ? "Responder ACK recorded" : receipts.some((receipt) => receipt.type === "backend_received") ? "Backend receipt issued" : "No receipt record"), node("small", "", "Return delivery unknown"));
     const actions = node("div", "report-list-action");
     const incident = state.incidents.find((item) => item.id === report.incident_id) || state.incidents.find((item) => array(item.report_ids).includes(report.id));
-    const open = button("Open report →", "button-outline small", () => { if (incident) openIncident(incident.id, "reports", report.id); });
+    const open = button(mediaReviews.length ? "Review media →" : "Open report →", "button-outline small", () => { if (incident) { openIncident(incident.id, "reports", report.id); if (mediaReviews.length) focusMediaReview(report.id, mediaReviews[0].item.id); } });
     open.setAttribute("aria-label", `Open report ${shortId(report.id)}`);
     open.disabled = !incident;
     actions.append(open);
@@ -883,11 +886,82 @@
     return array(report.media).map((item) => `${mediaLabels[item.kind] || "Attachment"} ${item.status === "available" ? "available" : "pending"}`).join(" · ");
   }
 
+  function mediaEntries(report) {
+    return array(report.media).map((item) => ({item, analysis: array(report.media_analysis).find((entry) => entry.attachment_id === item.id) || {status: item.status === "available" ? "unknown" : "waiting_upload"}}));
+  }
+
+  function mediaStateLabel(analysis) {
+    if (analysis.status === "complete" && !analysis.result) return "Result unavailable";
+    return {waiting_upload: "Waiting for upload", queued: "Queued", running: "Processing", complete: "Complete", failed: "Failed", unavailable: "Unavailable", unknown: "Status not available"}[analysis.status] || humanField(analysis.status);
+  }
+
+  function mediaAnalysisSummary(analysis) {
+    if (analysis.status === "complete") return analysis.result?.summary?.trim() || "No analysis summary was returned. Review the original media.";
+    if (analysis.error) return analysis.error;
+    return {waiting_upload: "Analysis starts after the attachment reaches the backend.", queued: "Waiting for the local model; no new result yet.", running: "The local model is analyzing this attachment.", failed: "No completed result from this attempt. Review the original or retry.", unavailable: "The local model is unavailable. Review the original or retry."}[analysis.status] || "No analysis state was supplied by the backend. Review the original media.";
+  }
+
+  function mediaTranscriptNote(item, result) {
+    if (!["audio", "video"].includes(item.kind) || result.transcript?.trim()) return null;
+    if (result.coverage?.audio_included === false) return "Audio was not included in this analysis. Review the original recording.";
+    return "No intelligible speech was identified by the model. Review the original recording; this does not establish that it contains no speech.";
+  }
+
+  function mediaReviewSignature(reports) {
+    return JSON.stringify(reports.map((report) => [report.id, report.media, report.media_analysis]));
+  }
+
+  function compactMediaReview(report, item, analysis, onReview) {
+    const card = node("article", `media-overview-card media-state-${analysis.status}`);
+    card.dataset.reportId = report.id;
+    card.dataset.attachmentId = item.id;
+    const top = node("div", "media-overview-top");
+    top.append(node("strong", "", `${mediaLabels[item.kind] || "Attachment"} · SOS ${shortId(report.id)}`), tag(mediaStateLabel(analysis), ["failed", "unavailable"].includes(analysis.status) || (analysis.status === "complete" && !analysis.result) ? "warning" : "neutral"));
+    card.append(top, node("p", "media-result-summary", mediaAnalysisSummary(analysis)));
+    if (analysis.status === "complete" && analysis.result) {
+      if (analysis.result.transcript?.trim()) card.append(node("p", "media-overview-transcript", `AI transcript: ${analysis.result.transcript}`));
+      const transcriptNote = mediaTranscriptNote(item, analysis.result);
+      if (transcriptNote) card.append(node("p", "media-transcript-empty", transcriptNote));
+      const uncertainty = array(analysis.result.uncertainties)[0];
+      card.append(node("p", "media-overview-uncertainty", uncertainty ? `Uncertainty: ${uncertainty}` : "Uncertainty details were not returned. The result is not independently verified."));
+      card.append(node("small", "detail-muted", `${analysis.result.model || "Model not recorded"} · Urgency: ${humanField(analysis.result.suggested_urgency)} (AI suggestion)`));
+    }
+    const review = button(analysis.status === "complete" ? "Review AI result & original →" : "Review media & processing →", "button-outline small", onReview);
+    review.dataset.action = "review-media-result";
+    card.append(review);
+    return card;
+  }
+
+  function focusMediaReview(reportId, attachmentId) {
+    selectCaseTab("reports", true);
+    const panel = $("case-panel-reports");
+    const review = [...(panel?.querySelectorAll(".media-analysis") || [])].find((item) => item.dataset.reportId === reportId && item.dataset.attachmentId === attachmentId);
+    if (review) { review.open = true; review.tabIndex = -1; review.scrollIntoView({block: "start", inline: "nearest", behavior: "auto"}); review.focus({preventScroll: true}); }
+  }
+
+  function incidentMediaOverview(reports) {
+    const block = section("Media analysis · human review required");
+    block.id = "incident-media-overview";
+    block.dataset.signature = mediaReviewSignature(reports);
+    const entries = reports.flatMap((report) => mediaEntries(report).map((entry) => ({report, ...entry})));
+    block.hidden = !entries.length;
+    if (!entries.length) return block;
+    block.append(node("p", "detail-muted", "All received attachments appear here, including ordinary or unclear content. AI interpretation is not a verification of the event."));
+    for (const {report, item, analysis} of entries) {
+      block.append(compactMediaReview(report, item, analysis, () => focusMediaReview(report.id, item.id)));
+    }
+    return block;
+  }
+
   function mediaEvidence(report) {
     const sectionEl = node("section", "media-evidence");
+    sectionEl.dataset.reportId = report.id;
+    sectionEl.dataset.signature = mediaReviewSignature([report]);
     sectionEl.append(node("h4", "", "Voice, photos & video"), node("p", "detail-muted", "Review the original alongside AI interpretation. Neither establishes whether an emergency is genuine."));
-    array(report.media).forEach((item) => {
+    mediaEntries(report).forEach(({item, analysis}) => {
       const row = node("div", "media-evidence-row");
+      row.dataset.reportId = report.id;
+      row.dataset.attachmentId = item.id;
       const copy = node("div", "media-evidence-copy");
       const length = Number.isFinite(item.duration_ms) ? ` · ${(item.duration_ms / 1000).toFixed(1)} sec` : "";
       copy.append(node("strong", "", `${mediaLabels[item.kind] || "Attachment"}${length}`), node("small", "", item.status === "available" ? `Available for review · ${Math.ceil(Number(item.byte_size) / 1024)} KB` : "SOS received; attachment pending"));
@@ -897,42 +971,75 @@
         if (action) row.append(button(action, "button-outline small", () => openMedia(report, item)));
       } else row.append(tag("PENDING", "warning"));
       sectionEl.append(row);
-      const analysis = array(report.media_analysis).find((entry) => entry.attachment_id === item.id);
-      if (analysis) sectionEl.append(mediaAnalysis(report, item, analysis));
+      sectionEl.append(mediaAnalysis(report, item, analysis));
     });
     return sectionEl;
   }
 
   function mediaAnalysis(report, item, analysis) {
     const box = node("details", "media-analysis");
+    box.open = true;
+    box.dataset.reportId = report.id;
+    box.dataset.attachmentId = item.id;
+    box.dataset.signature = JSON.stringify([item, analysis]);
     const result = analysis.result;
-    box.append(node("summary", "", result && analysis.status === "complete" ? `AI media review · ${humanField(result.suggested_urgency)} urgency suggested` : `AI media review · ${humanField(analysis.status)}`));
+    box.append(node("summary", "", `AI media review · ${mediaStateLabel(analysis)}`));
     if (result) {
       if (analysis.status !== "complete") box.append(node("p", "human-notice", `Previous analysis shown below. The current attempt is ${humanField(analysis.status)}${analysis.error ? `: ${analysis.error}` : "."}`));
-      box.append(node("p", "", result.summary), node("p", "detail-muted", `${result.model} · ${date(result.generated_at, true)} · Human review required`));
-      if (result.transcript) box.append(node("h5", "", `Speech transcription · ${result.language || "language unknown"}`), node("blockquote", "media-transcript", result.transcript));
-      for (const [label, values] of [["Visible observations", result.visual_observations], ["Audible observations", result.audible_observations], ["Uncertainty & limitations", result.uncertainties], ["Human checks", result.requested_human_checks]]) {
-        if (array(values).length) box.append(node("h5", "", label), evidenceList(values, ""));
+      box.append(node("p", "media-result-summary", result.summary?.trim() || "No analysis summary was returned. Review the original media."), node("p", "detail-muted", `${result.model || "Model not recorded"} · ${date(result.generated_at, true)} · Human review required`));
+      if (result.transcript?.trim()) box.append(node("h5", "", `Speech transcription · ${result.language || "language unknown"}`), node("blockquote", "media-transcript", result.transcript));
+      const transcriptNote = mediaTranscriptNote(item, result);
+      if (transcriptNote) box.append(node("h5", "", "Speech transcription"), node("p", "media-transcript-empty", transcriptNote));
+      box.append(node("h5", "", "Uncertainty & limitations"), evidenceList(result.uncertainties, "No uncertainty details were returned. The AI result is not independently verified."));
+      box.append(node("p", "", `Suggested urgency: ${humanField(result.suggested_urgency)}. ${result.urgency_reason || "No reasoning was returned."}`));
+      const observations = node("details", "media-observations");
+      observations.append(node("summary", "", "Observations & suggested human checks"));
+      for (const [label, values] of [["Visible observations", result.visual_observations], ["Audible observations", result.audible_observations], ["Human checks", result.requested_human_checks]]) {
+        if (array(values).length) observations.append(node("h5", "", label), evidenceList(values, ""));
       }
-      box.append(node("p", "", `Urgency reasoning: ${result.urgency_reason}`));
+      if (observations.children.length > 1) box.append(observations);
       const provenance = node("details", "media-provenance");
       provenance.append(node("summary", "", "Analysis coverage & integrity"), node("pre", "", JSON.stringify(result.coverage, null, 2)), node("small", "", `Source SHA-256: ${result.source_sha256}`));
       box.append(provenance);
     } else {
-      box.append(node("p", "detail-muted", analysis.error || (analysis.status === "waiting_upload" ? "Analysis starts after the attachment arrives. The SOS is already available for human review." : "Local AI is processing this attachment. Review the original while it runs.")));
+      box.append(node("p", "media-result-summary", mediaAnalysisSummary(analysis)));
+      box.append(node("p", "detail-muted", `Configured model: ${state.ai.media?.model || state.ai.model || "Not reported"}. Original evidence remains available independently of AI.`));
     }
-    if (analysis.status === "failed" && account.role !== "viewer") {
+    if (item.status === "available" && (["failed", "unavailable", "unknown"].includes(analysis.status) || (analysis.status === "complete" && !result)) && account.role !== "viewer") {
+      const message = node("p", "media-action-message");
+      message.setAttribute("role", "status");
       const retry = button("Retry media analysis", "button-outline small", async () => {
+        const session = authEpoch;
         retry.disabled = true;
-        try { await api(`/api/reports/${report.id}/attachments/${item.id}/analyze`, {method: "POST"}); await refresh({force: true}); }
-        catch (error) { toast(error.message); retry.disabled = false; }
+        message.textContent = "Requesting another analysis…";
+        try {
+          await api(`/api/reports/${encodeURIComponent(report.id)}/attachments/${encodeURIComponent(item.id)}/analyze`, {method: "POST"});
+          if (session !== authEpoch) return;
+          message.textContent = "Analysis queued. Waiting for the local model.";
+          await refresh({force: true});
+        } catch (error) { if (session === authEpoch) { message.textContent = error.message; retry.disabled = false; } }
       });
-      box.append(retry);
+      box.append(retry, message);
     }
     return box;
   }
 
   function closeMedia() { [...mediaDialogs].forEach((dialog) => dialog.close()); }
+
+  function viewerMediaReview(report, item, dialog) {
+    const review = node("section", "media-viewer-review");
+    review.dataset.reportId = report.id;
+    review.dataset.attachmentId = item.id;
+    review.dataset.signature = mediaReviewSignature([report]);
+    const analysis = mediaEntries(report).find((entry) => entry.item.id === item.id)?.analysis || {status: item.status === "available" ? "unknown" : "waiting_upload"};
+    review.append(node("h3", "", "AI interpretation · unverified"), compactMediaReview(report, item, analysis, () => {
+      dialog.close();
+      const incident = state.incidents.find((entry) => entry.id === report.incident_id || array(entry.report_ids).includes(report.id));
+      if (incident && selectedIncidentId !== incident.id) openIncident(incident.id, "reports", report.id);
+      focusMediaReview(report.id, item.id);
+    }));
+    return review;
+  }
 
   async function openMedia(report, item) {
     closeMedia();
@@ -946,7 +1053,11 @@
     const status = node("p", "detail-muted", "Loading attachment…");
     status.setAttribute("role", "status");
     const content = node("div", "media-player");
-    dialog.append(top, node("p", "media-source-note", "Source-submitted media · unverified · review AI interpretation separately"), status, content);
+    dialog.dataset.reportId = report.id;
+    dialog.dataset.attachmentId = item.id;
+    const layout = node("div", "media-viewer-layout");
+    layout.append(content, viewerMediaReview(report, item, dialog));
+    dialog.append(top, node("p", "media-source-note", "Source-submitted media · unverified · AI interpretation is shown separately in this viewer"), status, layout);
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 30000);
     let url = null;
@@ -984,7 +1095,7 @@
       player.addEventListener("error", () => { status.textContent = "This browser could not display or play this recording. The received attachment is retained."; });
       player.src = url;
       content.append(player);
-      status.textContent = item.kind === "image" ? "Review the photo alongside the original report and its location." : "Press play to review. Any AI transcript appears separately under AI media review and may contain errors; captions are not embedded.";
+      status.textContent = item.kind === "image" ? "Review the photo alongside the original report and its location." : "Press play to review. Any AI transcript appears separately in this viewer and may contain errors; captions are not embedded.";
     } catch (error) {
       if (dialog.open) status.textContent = error.name === "AbortError" ? "Attachment loading timed out. Close this viewer and try again." : error.message;
     } finally { window.clearTimeout(timeout); }
@@ -1286,15 +1397,7 @@
     const details = node("dl", "facts-grid");
     [["Reported location", location(incident)], ["First received", date(incident.created_at, true)], ["Original reports", String(array(incident.report_ids).length)], ["Acknowledged", incident.acknowledged_at ? date(incident.acknowledged_at, true) : "Not yet acknowledged"], ["People affected", "Unique total unconfirmed"]].forEach(([label, value]) => details.append(node("dt", "", label), node("dd", "", value)));
     groups.overview.push(caseEvidenceSummary(incident, reports), details);
-    const findings = mediaFindings(incident);
-    if (findings.length) {
-      const mediaReview = section("AI media findings · review required");
-      for (const finding of findings) {
-        mediaReview.append(node("p", "", `SOS ${shortId(finding.report.id)}: ${finding.result.summary}`), node("p", "detail-muted", `Suggested urgency: ${humanField(finding.result.suggested_urgency)}. ${finding.result.urgency_reason}`));
-      }
-      mediaReview.append(button("Review original media & uncertainty", "button-outline", () => selectCaseTab("reports")));
-      groups.overview.push(mediaReview);
-    }
+    groups.overview.push(incidentMediaOverview(reports));
     const pipeline = section("Four-stage processing");
     const stageList = processingStages(incident);
     stageList.id = "incident-pipeline";
@@ -1647,9 +1750,60 @@
       return card;
   }
 
+  function replaceMediaRegion(current, next) {
+    const active = document.activeElement;
+    const restoreFocus = current.contains(active);
+    let scope = active;
+    if (restoreFocus) {
+      while (scope !== current && !scope.dataset?.attachmentId) scope = scope.parentNode;
+    }
+    const detailKey = (details, container) => {
+      let owner = details;
+      while (owner !== container && !owner.dataset?.attachmentId) owner = owner.parentNode;
+      return `${owner.dataset.reportId || ""}:${owner.dataset.attachmentId || ""}:${details.className}`;
+    };
+    const expansion = new Map([...current.querySelectorAll("details")].map((details) => [detailKey(details, current), details.open]));
+    next.querySelectorAll("details").forEach((details) => { const id = detailKey(details, next); if (expansion.has(id)) details.open = expansion.get(id); });
+    current.replaceWith(next);
+    if (!restoreFocus) return;
+    // A focused read-only details panel must not freeze progress. Retain the same
+    // attachment/control focus when possible; a completed retry returns to its review.
+    const candidates = [next, ...next.querySelectorAll("[data-attachment-id]")];
+    const replacementScope = scope === current ? next : candidates.find((candidate) => candidate.dataset.reportId === scope.dataset.reportId && candidate.dataset.attachmentId === scope.dataset.attachmentId && candidate.tagName === scope.tagName && candidate.className.split(" ")[0] === scope.className.split(" ")[0]) || next;
+    const controls = [...replacementScope.querySelectorAll("button,summary,a,input,textarea,select")];
+    const replacementControl = active === scope ? replacementScope :
+      (active.dataset?.action && controls.find((control) => control.dataset.action === active.dataset.action)) ||
+      controls.find((control) => control.tagName === active.tagName && control.textContent === active.textContent) || replacementScope;
+    if (!["BUTTON", "SUMMARY", "A", "INPUT", "TEXTAREA", "SELECT"].includes(replacementControl.tagName)) replacementControl.tabIndex = -1;
+    replacementControl.focus({preventScroll: true});
+  }
+
   function maybeRefreshDialogs() {
     const selection = window.getSelection();
     const interacting = (container) => container.contains(document.activeElement) || (selection && !selection.isCollapsed && container.contains(selection.anchorNode));
+    const selecting = (container) => selection && !selection.isCollapsed && container.contains(selection.anchorNode);
+    // Media progress is independent of unsaved responder forms and active players.
+    // Replace only read-only review regions; never reload a playing attachment.
+    if ($("incident-dialog").open) {
+      const incident = state.incidents.find((item) => item.id === selectedIncidentId);
+      if (incident) {
+        const reports = reportsFor(incident);
+        const overview = $("incident-media-overview");
+        if (overview && !selecting(overview) && overview.dataset.signature !== mediaReviewSignature(reports)) replaceMediaRegion(overview, incidentMediaOverview(reports));
+        $("detail-content").querySelectorAll(".media-evidence").forEach((evidence) => {
+          const report = reports.find((item) => item.id === evidence.dataset.reportId);
+          if (!report || selecting(evidence) || evidence.dataset.signature === mediaReviewSignature([report])) return;
+          const next = mediaEvidence(report);
+          replaceMediaRegion(evidence, next);
+        });
+      }
+    }
+    for (const dialog of mediaDialogs) {
+      const report = state.reports.find((entry) => entry.id === dialog.dataset.reportId);
+      const item = array(report?.media).find((entry) => entry.id === dialog.dataset.attachmentId);
+      const review = dialog.querySelector(".media-viewer-review");
+      if (report && item && review && !selecting(review) && review.dataset.signature !== mediaReviewSignature([report])) replaceMediaRegion(review, viewerMediaReview(report, item, dialog));
+    }
     // Stage progress remains live while an operator edits a separate form.
     if ($("incident-dialog").open) {
       const incident = state.incidents.find((item) => item.id === selectedIncidentId);

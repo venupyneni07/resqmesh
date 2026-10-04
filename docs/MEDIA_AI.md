@@ -28,6 +28,24 @@ reanalysis must be displayed as previous results until the new job completes.
 `ai.media` exposes the queue and current attachment. The retry endpoint is
 `POST /api/reports/{report_id}/attachments/{attachment_id}/analyze`.
 
+## Finding results in Response Center
+
+Incoming report rows show each attachment's analysis state and a short summary. The case's
+**Overview** includes media review cards, and the original photo/audio/video viewer shows the
+AI interpretation beside or below the source media. In **Reports & delivery**, the AI review
+opens expanded, showing the summary, transcript when available, uncertainty and suggested
+urgency. Observations, suggested human checks and analysis coverage can be expanded separately.
+
+Waiting for upload, queued, processing and failed states have visible explanations; eligible
+operators can retry failed or unavailable analysis. Results remain visible when urgency is
+unknown or the transcript is empty. For unclear audio, the UI explains that the model did not
+identify intelligible speech and asks the reviewer to play the original; this does not establish
+that the recording contains no speech. Blank and ordinary images enter the same analysis queue;
+the expected result describes visible content and uncertainty without claiming that an emergency
+or a false report has been established. New analyses completed after the initial page load
+produce an in-workspace notice, including normal/unknown results.
+Optional browser notifications remain limited to high/critical suggestions and require permission.
+
 ## Bounded inputs and provenance
 
 - Audio: up to 30 seconds, locally decoded to mono 16 kHz PCM WAV.
@@ -76,6 +94,15 @@ limitations, not evidence of validated emergency scene or sound classification.
 Worker and local model against a new isolated database. It verifies completion events,
 unchanged original packets, backend-received receipts only, and preservation of live reports.
 Its evidence is `artifacts/media-intelligence/live-pipeline-validation.json`.
+
+The opt-in `backend/tests/run_live_blank_media_validation.py` check uses a generated plain-white
+JPEG and the committed synthetic speech fixture. It runs a real loopback HTTP server, media
+worker and local Gemma against an isolated database; the four text-agent jobs are outside this
+focused check. The white image completed with a no-discernible-content summary and unknown
+urgency; the speech transcript matched the fixture ignoring capitalization. Both results were
+visible through the dashboard API, with original bytes/packets preserved and no automatic human
+acknowledgement. These examples do not establish universal image or transcription accuracy.
+See [testing instructions](TESTING.md#actual-local-gemma-media-processing) to repeat the check.
 
 Human review is mandatory. The system cannot prove that media is recent or authentic, identify
 the reporter, establish a current location, diagnose injuries, or guarantee speech recognition

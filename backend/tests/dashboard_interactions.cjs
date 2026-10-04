@@ -18,7 +18,7 @@ class Element {
  replaceWith(x){const p=this.parentNode,i=p.children.indexOf(this);p.children[i]=x;x.parentNode=p;this.parentNode=null}
  setAttribute(k,v){this.attributes[k]=String(v)}getAttribute(k){return this.attributes[k]??null}
  removeAttribute(k){delete this.attributes[k]}addEventListener(k,f){(this.handlers[k]??=[]).push(f)}async dispatch(k,props={}){for(const f of this.handlers[k]||[])await f({target:this,preventDefault(){},...props})}
- contains(x){return this===x||this.children.some(c=>c.contains(x))}focus(){document.activeElement=this}showModal(){this.open=true}close(){this.open=false}scrollIntoView(){}
+ contains(x){return this===x||this.children.some(c=>c.contains(x))}focus(){document.activeElement=this}showModal(){this.open=true}close(){this.open=false;for(const handler of this.handlers.close||[])handler()}pause(){this.paused=true}scrollIntoView(){}
  querySelectorAll(s){let found=[];for(const x of this.children){if(s.split(',').some(t=>matches(x,t.trim())))found.push(x);found.push(...x.querySelectorAll(s))}return found}querySelector(s){return this.querySelectorAll(s)[0]??null}
 }
 function matches(x,s){if(s.startsWith('.'))return x.className.split(' ').includes(s.slice(1));const m=s.match(/^(\w+)?\[([^=\]]+)(?:="([^"]*)")?\]$/);if(m){if(m[1]&&x.tagName!==m[1].toUpperCase())return false;const key=m[2];let v=key.startsWith('data-')?x.dataset[key.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]:x.attributes[key]??x[key];return m[3]===undefined?v!==undefined:v===m[3]}return x.tagName===s.toUpperCase()}
@@ -29,7 +29,7 @@ for(const match of fs.readFileSync(path.join(projectRoot,'backend/static/index.h
 const window={getSelection:()=>null,setTimeout:()=>1,clearTimeout(){},matchMedia:()=>({matches:true})};let request;
 const context={document,window,Date,JSON,Set,Map,console,AbortController,fetch:async(path,opts)=>{request={path,body:JSON.parse(opts.body)};return{ok:false,status:422,json:async()=>({detail:'intentional isolated mock rejection'})}}};
 let src=fs.readFileSync(path.join(projectRoot,'backend/static/app.js'),'utf8');src=src.slice(0,src.lastIndexOf('  document.querySelectorAll("[data-filter]").forEach((filter)'));
-src+='globalThis.test={setState(value){state={...initialState,...value};account=value.account||{name:"Local demo",role:"demo"};connected=true},snapshot(){return{state,account,connected,authEpoch,correlationDecisionPending,correlationRefreshRequired}},refresh,clearWorkspace,enterKey,renderIncidents,renderOperationsRail,openIncident,selectCaseTab,maybeRefreshDialogs,incidentOrder,renderReports,setView,openCorrelations,renderCorrelations,fitPanePages,observePaneCapacity,closeIncidentWorkspace,discardCaseDraft,clearReportSearch,clearIncidentSearch,setSort(value){selectedSort=value},setDirty(value){formDirty=value}};})();';vm.runInNewContext(src,context);const t=context.test,$=document.getElementById;
+src+='globalThis.test={setState(value){state={...initialState,...value};account=value.account||{name:"Local demo",role:"demo"};connected=true},snapshot(){return{state,account,connected,authEpoch,correlationDecisionPending,correlationRefreshRequired}},refresh,clearWorkspace,enterKey,renderIncidents,renderOperationsRail,openIncident,openMedia,closeMedia,selectCaseTab,maybeRefreshDialogs,incidentOrder,renderReports,setView,openCorrelations,renderCorrelations,fitPanePages,observePaneCapacity,closeIncidentWorkspace,discardCaseDraft,clearReportSearch,clearIncidentSearch,setSort(value){selectedSort=value},setDirty(value){formDirty=value}};})();';vm.runInNewContext(src,context);const t=context.test,$=document.getElementById;
 const now=Date.now();const reports=[{id:'report-critical',origin_id:'RQM-X',text:'<script>inert report</script>',simulation:true,relay_path:['RQM-X','RQM-Y'],received_at:now-1000,people_affected:3,emergency_type:'flood',room:'12',receipts:[{type:'backend_received'}],intake:{facts:[]}}, {id:'report-low',origin_id:'RQM-Z',text:'Second report',simulation:true,relay_path:['RQM-Z'],received_at:now-3600001,receipts:[]}];
 const stages=Object.fromEntries(['intake','correlation','verification','triage'].map(s=>[s,{status:'complete'}]));
 const incidents=[{id:'low',title:'Low case',created_at:1,updated_at:3,status:'new',report_ids:['report-low'],triage:{suggested_urgency:'low'},verification_status:'unverified',processing_stages:stages},{id:'critical',title:'Critical case',created_at:2,updated_at:4,status:'new',report_ids:['report-critical'],triage:{suggested_urgency:'critical'},verification_status:'unverified',processing_stages:stages,verification_signals:[]}];
@@ -94,6 +94,54 @@ quickReport.location_context={source:'unknown',observed_at:null,latitude:null,lo
 t.setState({reports:[quickReport],incidents:[quickCase],server_time:now});t.openIncident('quick-case','overview');
 assert.match($('case-panel-overview').textContent,/Unknown · no position attached/);assert.doesNotMatch($('case-panel-overview').textContent,/12\.9716/);
 console.log('PASS: quick SOS preset is labeled; selected needs visible and searchable; saved location preserves original observation age and accuracy; unknown position stays unknown.');
+
+// Independent media refresh must not replace an edited form or a playing original.
+const audioItem={id:'synthetic-audio',kind:'audio',mime_type:'audio/mp4',byte_size:12,status:'available'};
+const pendingMediaReport={...quickReport,media:[audioItem],media_analysis:[{attachment_id:audioItem.id,status:'queued',result:null}]};
+const pendingMediaState={reports:[pendingMediaReport],incidents:[quickCase],server_time:now,ai:{model:'TEST-ONLY-MODEL'}};
+t.setState(pendingMediaState);t.openIncident('quick-case','overview');
+assert.match($('incident-media-overview').textContent,/Queued/);
+const draftTeam=$('operator-team');draftTeam.value='Preserve media-review draft';await draftTeam.dispatch('input');draftTeam.focus();
+await $('incident-media-overview').querySelector('[data-action="review-media-result"]').dispatch('click');
+const queuedFocusedReview=$('case-panel-reports').querySelector('.media-analysis');
+assert.equal(document.activeElement,queuedFocusedReview,'the actual result action programmatically focuses the review');
+const runningMediaReport={...pendingMediaReport,media_analysis:[{attachment_id:audioItem.id,status:'running',result:null}]};
+t.setState({...pendingMediaState,reports:[runningMediaReport]});t.maybeRefreshDialogs();
+const runningFocusedReview=$('case-panel-reports').querySelector('.media-analysis');
+assert.notEqual(runningFocusedReview,queuedFocusedReview);assert.equal(document.activeElement,runningFocusedReview);assert.match(runningFocusedReview.textContent,/Processing/);
+assert.equal($('operator-team'),draftTeam);assert.equal(draftTeam.value,'Preserve media-review draft');
+context.URL={createObjectURL:()=> 'blob:synthetic-review',revokeObjectURL(){}};
+let mediaFetches=0;
+context.fetch=async()=>{mediaFetches++;return{ok:true,blob:async()=>({size:12,type:'audio/mp4'})}};
+await t.openMedia(pendingMediaReport,audioItem);
+const originalDialog=document.querySelectorAll('.media-dialog').at(-1);
+const originalPlayer=originalDialog.querySelector('audio');originalPlayer.currentTime=2.4;originalPlayer.paused=false;originalPlayer.focus();
+assert.match(originalDialog.querySelector('.media-viewer-review').textContent,/Queued/);
+const completeMediaReport={...pendingMediaReport,media_analysis:[{attachment_id:audioItem.id,status:'complete',result:{summary:'Synthetic speech is unclear.',transcript:'',uncertainties:['Model could not interpret the recording.'],suggested_urgency:'unknown',model:'TEST-ONLY-MODEL',generated_at:now,coverage:{audio_included:true}}}]};
+t.setState({...pendingMediaState,reports:[completeMediaReport]});t.maybeRefreshDialogs();
+assert.equal($('operator-team'),draftTeam);assert.equal(draftTeam.value,'Preserve media-review draft');
+assert.match($('incident-media-overview').textContent,/Complete/);assert.match($('incident-media-overview').textContent,/Synthetic speech is unclear/);
+assert.match($('case-panel-reports').querySelector('.media-analysis').textContent,/No intelligible speech was identified/);
+assert.match(originalDialog.querySelector('.media-viewer-review').textContent,/No intelligible speech was identified/);
+assert.equal(originalDialog.querySelector('audio'),originalPlayer);assert.equal(originalPlayer.currentTime,2.4);assert.equal(originalPlayer.paused,false);assert.equal(mediaFetches,1);
+t.closeMedia();assert.equal(originalPlayer.paused,true);draftTeam.focus();
+await $('incident-media-overview').querySelector('[data-action="review-media-result"]').dispatch('click');
+assert.equal($('case-panel-reports').hidden,false);assert.equal($('case-panel-reports').querySelector('.media-analysis').open,true);assert.equal($('operator-team'),draftTeam);
+console.log('PASS: queued→complete media updates Overview, original report and open player review while preserving the exact dirty form node, draft value, audio node/playback position and single media fetch; direct result link selects the correct tab.');
+
+// Keyboard focus on the result itself or a button must not freeze later polls.
+t.setState(pendingMediaState);document.activeElement=null;t.maybeRefreshDialogs();
+await $('incident-media-overview').querySelector('[data-action="review-media-result"]').dispatch('click');
+assert.equal(document.activeElement,$('case-panel-reports').querySelector('.media-analysis'));
+t.setState({...pendingMediaState,reports:[completeMediaReport]});t.maybeRefreshDialogs();
+assert.equal(document.activeElement,$('case-panel-reports').querySelector('.media-analysis'));
+assert.match(document.activeElement.textContent,/Complete/);assert.match(document.activeElement.textContent,/Synthetic speech is unclear/);
+assert.equal($('operator-team'),draftTeam);assert.equal(draftTeam.value,'Preserve media-review draft');
+const overviewReviewButton=$('incident-media-overview').querySelector('[data-action="review-media-result"]');overviewReviewButton.focus();
+t.setState(pendingMediaState);t.maybeRefreshDialogs();
+assert.equal(document.activeElement,$('incident-media-overview').querySelector('[data-action="review-media-result"]'));
+assert.match(document.activeElement.textContent,/Review media & processing/);
+console.log('PASS: actual review-button→focused analysis→queued/running/complete polling stays live, preserves focused attachment and dirty form; focused Overview action follows its replacement when the label changes.');
 
 // Deferred network responses exercise session boundaries without a real server.
 const defer=()=>{let resolve;const promise=new Promise(done=>{resolve=done});return{promise,resolve}};
