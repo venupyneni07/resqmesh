@@ -9,11 +9,26 @@ from fastapi.testclient import TestClient
 
 from backend.ai import InferenceUnavailable, InvalidAIOutput, OllamaAgents
 from backend.app import create_app
-from backend.media_analysis import MediaAnalyzer, prepare_media
+from backend.media_analysis import PIPELINE_VERSION, MediaAnalyzer, prepare_media
 from backend.store import Store, StoreError
 from backend.tests.test_backend import TestOnlyAgents
 from backend.tests.test_media import JPEG, manifest, media_packet
 from backend.worker import Worker
+
+
+# These are synthetic model outputs for contract tests, not observations of JPEG.
+DETAILED_PHOTO_SUMMARY = (
+    "The image appears to show a person seated beside a blue gate, with a bag on the ground. "
+    "The person's hand rests on the gate, and a sign behind them reads 'North entrance'. "
+    "A second figure is partly visible at the edge of the frame, but their activity is unclear. "
+    "The image alone does not establish whether anyone needs assistance or when it was taken."
+)
+DETAILED_AUDIO_SUMMARY = (
+    "The speaker says they are near a blue gate and cannot move, and asks for help. "
+    "They mention that another person is waiting with them, but give no name or precise address. "
+    "A low continuous sound is audible behind the speech; its source cannot be identified from this recording. "
+    "These are statements heard in the recording, and the circumstances and current location still require confirmation."
+)
 
 
 def queued_store(tmp_path):
@@ -74,13 +89,18 @@ def test_recovery_enqueues_published_file_but_not_missing_attachment(tmp_path):
         store.retry_media_analysis(report["id"], items[1]["id"])
 
 
-def test_blank_media_result_is_visible_in_admin_api_without_speech_or_emergency(monkeypatch, tmp_path):
-    """Synthetic inference: an empty transcript must not hide the completed review."""
+@pytest.mark.parametrize("summary,observations", [
+    ("The image appears uniformly white.", ["No distinct objects can be identified."]),
+    (DETAILED_PHOTO_SUMMARY, ["Synthetic person beside a blue gate", "Synthetic sign reading North entrance"]),
+])
+def test_media_description_survives_worker_and_admin_api_without_invented_speech(
+        monkeypatch, tmp_path, summary, observations):
+    """Synthetic inference: both rich descriptions and brief blank-image results stay visible."""
     monkeypatch.setattr("backend.media_analysis.prepare_media", lambda *args: {
         "content": [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,c3ludGhldGlj"}}],
         "kind": "image", "duration_seconds": 0, "sampled_frame_seconds": [0], "audio_included": False})
-    review = interpretation(summary="The image appears uniformly white.",
-        visual_observations=["No distinct objects can be identified."],
+    review = interpretation(summary=summary,
+        visual_observations=observations,
         uncertainties=["This image alone cannot establish what happened."],
         urgency_reason="The attachment supplies no reliable urgency evidence.")
     def handler(request):
@@ -116,6 +136,8 @@ def test_blank_media_result_is_visible_in_admin_api_without_speech_or_emergency(
         item, = report["media_analysis"]
         assert item["status"] == "complete" and item["error"] is None
         assert item["result"]["summary"] == review["summary"]
+        assert item["result"]["pipeline_version"] == "media-review-v3" == PIPELINE_VERSION
+        assert item["result"]["visual_observations"] == observations
         assert item["result"]["uncertainties"] == review["uncertainties"]
         assert item["result"]["transcript"] == ""
         assert item["result"]["suggested_urgency"] == "unknown"
@@ -176,11 +198,12 @@ def test_decoder_duration_limit(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("kind,audio,frames,result,expected", [
-    ("audio", True, [], interpretation(transcript="Test words"), None),
+    ("audio", True, [], interpretation(transcript="Test words", summary=DETAILED_AUDIO_SUMMARY), None),
     ("audio", True, [], interpretation(summary="Speech could not be understood",
         uncertainties=["The recording is unclear; review the original"]), None),
     ("image", False, [0], interpretation(visual_observations=["Blue image"]), None),
     ("video", True, [0, 1, 2], interpretation(transcript="Test words", visual_observations=["Blue frames"]), None),
+    ("video", False, [0, 1, 2], interpretation(visual_observations=["Blue frames"]), None),
     ("image", False, [0], interpretation(transcript="Invented speech"), "claimed audio"),
     ("audio", True, [], interpretation(visual_observations=["Invented room"]), "claimed visual"),
 ])
@@ -202,7 +225,33 @@ def test_supported_multimodal_api_and_modality_grounding(monkeypatch, kind, audi
         assert payload["frequency_penalty"] == (0.5 if audio else 0)
         assert payload["max_tokens"] == 1800
         assert "When speech is unintelligible, transcript must be empty" in payload["messages"][0]["content"]
+        assert "An absent input modality is not negative evidence" in payload["messages"][0]["content"]
+        assert "Do not guess a person's age, gender or emotional state" in payload["messages"][0]["content"]
+        assert "absence of visible hazards alone MUST use unknown" in payload["messages"][0]["content"]
         assert payload["response_format"]["type"] == "json_schema"
+        schema = payload["response_format"]["json_schema"]["schema"]["properties"]
+        assert schema["summary"]["minLength"] == 1  # Blank/unclear media must not be padded.
+        assert schema["summary"]["maxLength"] == 1200
+        assert "3–5 useful sentences" in schema["summary"]["description"]
+        assert "1–2 sentences" in schema["summary"]["description"]
+        assert "Do not guess age, gender or emotional state" in schema["summary"]["description"]
+        assert "Normal requires affirmative evidence of a non-urgent request" in schema["suggested_urgency"]["description"]
+        assert "Use unknown for an ordinary portrait, blank scene" in schema["suggested_urgency"]["description"]
+        assert "Missing audio or images must not be used" in schema["urgency_reason"]["description"]
+        guidance = payload["messages"][1]["content"][-1]["text"]
+        if kind == "image":
+            assert "visible subject or scene" in guidance
+            assert "clearly readable text" in guidance
+        elif kind == "audio":
+            assert "location clues, people mentioned and requested help only when actually heard" in guidance
+            assert "non-speech sounds" in guidance
+            assert schema["visual_observations"]["maxItems"] == 0
+        else:
+            assert "sampled frames" in guidance and "do not invent movement" in guidance
+        if not audio:
+            assert "No audio was supplied; do not make audible findings" in guidance
+            assert schema["audible_observations"]["maxItems"] == 0
+            assert schema["transcript"]["const"] == ""
         return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(result)}}]})
     async def run():
         agents = OllamaAgents("http://test.local", "TEST-ONLY")
@@ -217,6 +266,7 @@ def test_supported_multimodal_api_and_modality_grounding(monkeypatch, kind, audi
                 assert output["human_review_required"] and output["dispatch_performed"] is False
                 assert output["authenticity"] == "unverified"
                 assert output["transcript"] == result["transcript"]
+                assert output["summary"] == result["summary"]
                 assert output["uncertainties"] == result["uncertainties"]
                 assert output["coverage"]["sampled_frame_seconds"] == frames
                 assert len(requests) == 2

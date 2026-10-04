@@ -61,7 +61,7 @@ The recorded run returned a no-discernible-content summary and unknown urgency f
 
 ## Recorded software verification
 
-On October 4, 2026, the latest full backend suite passed **141 tests**, with one upstream Starlette deprecation warning. This includes regressions for rejecting truncated or incomplete media output, checking model capabilities before inference and retaining visible blank-media results through the dashboard API.
+On October 4, 2026, the latest full backend suite passed **143 tests**, with one upstream Starlette deprecation warning. This includes regressions for rejecting truncated or incomplete media output, checking model capabilities before inference, retaining both brief and detailed descriptions through the dashboard API, and supplying modality-specific description guidance without padding blank or unclear inputs.
 
 The separate Android baseline passed **50 Kotlin JVM tests and 12 distinct emulator tests**. Android lint reported zero errors and 33 warnings. Original local report payloads, media and settings were checked for preservation. These are dated checks, not a claim that future commits or every device have passed.
 

@@ -22,7 +22,9 @@ an authorized operator can request another analysis. A failure does not block th
 the attachment or replace it with a generated result. Previous results retained during manual
 reanalysis must be displayed as previous results until the new job completes.
 
-`media-review-v2` rejects truncated or incomplete model responses, including parseable JSON returned with an incomplete finish reason. For unclear audio, the model is prompted to preserve uncertainty and leave the transcript empty instead of guessing or repeating syllables. These safeguards do not guarantee recognition accuracy.
+`media-review-v3` requests a fuller, evidence-based description: several useful sentences when the attachment supports them, covering the visible scene or intelligible account and its limits. Simple, blank or unclear inputs can remain short; the model must not pad them with invented detail. Photo descriptions do not use the absence of an audio track as evidence about urgency. Voice descriptions distinguish the speaker's stated situation, location clues and requested help from uncertain sounds.
+
+The pipeline retains the safeguards introduced in `media-review-v2`: truncated or incomplete model responses are rejected, including parseable JSON returned with an incomplete finish reason. For unclear audio, the model is prompted to preserve uncertainty and leave the transcript empty instead of guessing or repeating syllables. The bounded output and transcript rules remain in effect. More detail does not establish greater accuracy.
 
 `reports[].media_analysis` exposes waiting_upload, queued, running, complete and failed states.
 `ai.media` exposes the queue and current attachment. The retry endpoint is
